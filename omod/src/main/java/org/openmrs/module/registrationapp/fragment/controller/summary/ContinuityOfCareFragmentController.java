@@ -38,10 +38,8 @@ public class ContinuityOfCareFragmentController {
 
     public String importCCD(@RequestParam("patientId") Integer patientId, HttpServletResponse response) throws IOException, XDSException {
         Patient patient = Context.getPatientService().getPatient(patientId);
-        LOGGER.error("Sending request to download patient CCD for " + patientId);
-//        getCcdService().downloadCcdAsPDF(response.getOutputStream(), patient);
         Ccd ccd = getCcdService().downloadAndSaveCcd(patient);
-        return patient.getUuid();
+        return getCcdService().getHtmlParsedLocallyStoredCcd(ccd);
     }
 
     private CcdService getCcdService() {

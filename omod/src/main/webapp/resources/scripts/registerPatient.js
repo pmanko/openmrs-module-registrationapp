@@ -52,6 +52,10 @@ jq(function() {
         var identifier;
         for (index in data) {
             var item = data[index];
+
+            console.log(item);
+
+
             var isMpi = false;
             if (data[index].mpiPatient != null && data[index].mpiPatient == true) {
                 isMpi = true;
@@ -93,6 +97,10 @@ jq(function() {
                     clonedIdValue.removeClass("idValueTemplate");
                     identifiers.append(clonedIdValue);
                 });
+            }
+
+            if (item.sourceLocation) {
+                cloned.find('.location').append('Source :' + item.sourceLocation)
             }
 
             var button;
