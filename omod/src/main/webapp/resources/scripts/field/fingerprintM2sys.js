@@ -22,10 +22,7 @@ function m2SysShowAlreadyExistingFingerprintsDialog(data) {
         selector: '#imported-patient-dialog',
         actions: {
             confirm: function () {
-                var patientUrl = '/' + OPENMRS_CONTEXT_PATH
-                        + '/coreapps/clinicianfacing/patient.page?patientId='
-                        + data['patientUuid'];
-                $(location).attr('href', patientUrl);
+                redirectToPatient(data['patientUuid']);
             },
             cancel: function () {
                 m2SysErrorMessage(emr.message(
@@ -44,7 +41,7 @@ function m2sysEnroll(button) {
         })
         .success(function (data) {
             if (data['success'] === true) {
-                if (data['status'] === 'ALREADY_REGISTERED') {
+                if (data['status'] === 'ALREADY_REGISTERED' && data['patientUuid']) {
                     m2SysShowAlreadyExistingFingerprintsDialog(data);
                 } else {
                     m2SysSuccess();

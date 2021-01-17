@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -15,6 +16,7 @@ import org.openmrs.api.AdministrationService;
 import org.openmrs.api.LocationService;
 import org.openmrs.event.Event;
 import org.openmrs.event.EventMessage;
+import org.openmrs.module.m2sysbiometrics.M2SysBiometricsConstants;
 import org.openmrs.module.m2sysbiometrics.service.RegistrationService;
 import org.openmrs.module.registrationapp.PropertiesUtil;
 import org.openmrs.module.registrationapp.fragment.controller.RegisterPatientFragmentController;
@@ -35,6 +37,7 @@ import org.openmrs.module.registrationcore.api.biometrics.model.EnrollmentStatus
 import org.openmrs.module.registrationcore.api.biometrics.model.Fingerprint;
 import org.openmrs.ui.framework.SimpleObject;
 import org.openmrs.ui.framework.annotation.SpringBean;
+import org.openmrs.ui.framework.fragment.FragmentModel;
 import org.openmrs.validator.PatientIdentifierValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +57,7 @@ import org.openmrs.module.m2sysbiometrics.service.UpdateService;
 public class FingerprintM2sysFragmentController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FingerprintM2sysFragmentController.class);
-    private final Log log = LogFactory.getLog(RegisterPatientFragmentController.class);
+    private final Log log = LogFactory.getLog(FingerprintM2sysFragmentController.class);
 
     private BiometricEngine biometricEngine;
 
@@ -70,15 +73,29 @@ public class FingerprintM2sysFragmentController {
         adminService = Context.getAdministrationService();
         registrationCoreService = Context.getService(RegistrationCoreService.class);
         biometricEngine = registrationCoreService.getBiometricEngine();
-        patientService =  Context.getService(PatientService.class);
+        patientService = Context.getService(PatientService.class);
     }
 
    
-    public void controller() {
+    public void controller(FragmentModel model) {
+
+        String constTestTemplate = M2SysBiometricsConstants.CONST_TEST_TEMPLATE;
+        String testTemplate = adminService.getGlobalProperty(constTestTemplate);
+        if(StringUtils.isNotBlank(testTemplate)){
+            model.addAttribute("testTemplate", testTemplate);
+            model.addAttribute("useTemplate", true);
+        }else{
+            model.addAttribute("useTemplate", false);
+        }
+        model.addAttribute("deviceName",adminService.getGlobalProperty(M2SysBiometricsConstants.M2SYS_CAPTURE_DEVICE_NAME));
+        model.addAttribute("templateFormat",adminService.getGlobalProperty(M2SysBiometricsConstants.M2SYS_CLOUDABIS_TEMPLATE_FORMAT));
+        model.addAttribute("engineName",adminService.getGlobalProperty(M2SysBiometricsConstants.M2SYS_CLOUDABIS_ENGINE_NAME));
+        model.addAttribute("apiPath",adminService.getGlobalProperty(M2SysBiometricsConstants.M2SYS_CLOUD_SCANR_URL) +
+                adminService.getGlobalProperty(M2SysBiometricsConstants.M2SYS_CAPTURE_ENDPOINT));
     }
 
     public SimpleObject enroll(@SpringBean("messageSourceService") MessageSourceService messageSourceService,
-            @SpringBean RegistrationCoreService registrationCoreService) {
+                               @SpringBean RegistrationCoreService registrationCoreService) {
         SimpleObject response = new SimpleObject();
         if (!isBiometricEngineEnabled()) {
             response.put("success", false);
@@ -93,14 +110,34 @@ public class FingerprintM2sysFragmentController {
             response.put("nationalBiometricSubjectId", result.getNationalBiometricSubject().getSubjectId());
             response.put("status", result.getEnrollmentStatus().name());
             if (result.getEnrollmentStatus() == EnrollmentStatus.ALREADY_REGISTERED) {
+//                Check and load local patient
                 Patient patient = findByLocalFpId(result.getLocalBiometricSubject().getSubjectId());
-                response.put("patientUuid", patient.getUuid());
+                if (patient != null) {
+                    response.put("patientUuid", patient.getUuid());
+                }else{
+                    LOGGER.info("No patient found with a local fingerprint ID : "+ result.getLocalBiometricSubject().getSubjectId());
+                }
             }
         } catch (Exception ex) {
             response.put("success", false);
             response.put("message", ex.getMessage());
-            LOGGER.error("Fingerprints enrollment failed:test1", ex.getMessage());
-           //.error("Fingerprints enrollment failed:test1", ex);
+
+            LOGGER.error("Fingerprints enrollment failed", ex);
+            LOGGER.error(ExceptionUtils.getFullStackTrace(ex));
+        }
+
+        return response;
+    }
+    public SimpleObject loadTemplateTemplate(@SpringBean("messageSourceService") MessageSourceService messageSourceService,
+                               @SpringBean RegistrationCoreService registrationCoreService) {
+        SimpleObject response = new SimpleObject();
+
+        String constTestTemplate = M2SysBiometricsConstants.CONST_TEST_TEMPLATE;
+        String testTemplate = adminService.getGlobalProperty(constTestTemplate);
+        if(StringUtils.isNotBlank(testTemplate)){
+            response.put("testTemplate", testTemplate);
+        }else {
+            response.put("testTemplate", "Failed to load the test template");
         }
 
         return response;
@@ -175,7 +212,7 @@ public class FingerprintM2sysFragmentController {
 
    /* 
     public SimpleObject update(@RequestParam("id") String id,
-            @SpringBean("messageSourceService") MessageSourceService messageSourceService) {
+                               @SpringBean("messageSourceService") MessageSourceService messageSourceService) {
         SimpleObject response = new SimpleObject();
         if (!isBiometricEngineEnabled()) {
             response.put("success", false);
@@ -240,7 +277,7 @@ public class FingerprintM2sysFragmentController {
     
     
     public SimpleObject updateSubjectId(@RequestParam("oldId") String oldId,
-            @RequestParam("newId") String newId) {
+                                        @RequestParam("newId") String newId) {
         if (!isBiometricEngineEnabled()) {
             return null;
         }
@@ -303,7 +340,8 @@ public class FingerprintM2sysFragmentController {
         PatientIdentifierType identifierType = PropertiesUtil.getLocalFpType();
         Patient patient = registrationCoreService.findByPatientIdentifier(subjectId, identifierType.getUuid());
         if (patient == null) {
-            throw new APIException(String.format("Patient with local fingerprint UUID %s doesn't exist", subjectId));
+//            throw new APIException(String.format("Patient with local fingerprint UUID %s doesn't exist", subjectId));
+            LOGGER.error("Patient with local fingerprint ID " + subjectId + " doesn't exist: ");
         }
         return patient;
     }
